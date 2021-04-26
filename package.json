@@ -14,19 +14,15 @@
     "lodash": "~1.3.1"
   },
   "devDependencies": {
-    "chai": "*",
-    "mocha": "*",
-    "chance": "*",
-    "sinon": "*",
-    "timekeeper": "*",
-    "optimist": "~0.6.0"
+    "nodemon": "1.0.2"
   },
   "engines": {
     "node": "4.1.1"
   },
   "scripts": {
     "test": "mocha --harmony --recursive test/unit",
-    "start": "node bin/activestack-gateway.js"
+    "start": "node bin/activestack-gateway.js",
+    "start:dev": "nodemon -w src -e js 'bin/activestack-gateway.js'"
   },
   "repository": {
     "type": "git",

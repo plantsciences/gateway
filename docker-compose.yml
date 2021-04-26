@@ -2,8 +2,10 @@
 version: "3.8"
 services:
   as-gateway:
+    # image: gateway_as-gateway
     build:
       context: .
+      target: app
     restart: always
     environment:
     - REDIS_HOST=redis
@@ -11,17 +13,46 @@ services:
     - RABBIT_HOST=rabbit
     - RABBIT_USER=guest
     - RABBIT_PASS=guest
+    - RABBIT_PORT=5672
     - APP_PORT=8080
     - LOG_LEVEL=debug
+    - WORKER_COUNT=1
+    - RUN_MODE=DEV
+    - RABBIT_USE_SSL=false
     depends_on:
     - rabbit
     - redis
+    ports:
+    - "8080:8080"
     container_name: as-gateway
-
+    volumes:
+    - "./src:/opt/src:cached"
+  sync-engine:
+    image: as-server:latest
+    depends_on:
+      - database
+      - rabbit
+      - redis
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PASS=
+      - RABBIT_HOST=rabbit
+      - RABBIT_USER=guest
+      - RABBIT_PASS=guest
+      - RABBIT_PORT=5672
+      - RABBIT_USE_SSL=false
+      - DB_USER=root
+      - DB_PASS=root
+      - DB_HOST=database
+      - LOG_LEVEL=debug
+      - RUN_MODE=
+    restart: always
+    container_name: psi-sync-engine
   rabbit:
     image: rabbitmq:3.5.6
     ports:
       - "5672:5672"
+      - "15672:15672"
     expose:
       - 5672
       - 15672
@@ -32,3 +63,19 @@ services:
       - '6379:6379'
     expose:
       - '6379'
+  database:
+    image: mysql:5.6.34
+    command: --default-authentication-plugin=mysql_native_password
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: "root"
+      MYSQL_DATABASE: "PSIGlobal"
+      MYSQL_USER: "root"
+    ports:
+      - "3306:3306"
+    container_name: psi-mysql
+    volumes:
+      - psi-db:/var/lib/mysql
+
+volumes:
+  psi-db:

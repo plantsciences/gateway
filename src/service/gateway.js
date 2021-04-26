@@ -40,6 +40,7 @@ Gateway.prototype.inject = function(httpServerFactory, properties, sslConfig, pr
 };
 
 Gateway.prototype.init = function(){
+    this.logger.info('Gateway init');
     this.initHttpServer();
     this.initRedis();
     this.initSocketIO();
@@ -69,17 +70,35 @@ Gateway.prototype.initSocketIO = function() {
 Gateway.prototype.initRabbitMQ = function() {
     this.rabbitmq = this.rabbitmqFactory.create();
     this.rabbitmq.on('ready', this.onRabbitReady.bind(this));
+    this.rabbitmq.on('error', (function(e) {
+      this.logger.info('RabbitMQ Error: ', e);
+    }).bind(this));
+    this.rabbitmq.on('heartbeat', (function () {
+      this.logger.debug('RabbitMQ heartbeat');
+    }).bind(this));
 };
 
 Gateway.prototype.onRabbitReady = function () {
-    this.logger.debug("RabbitMQ connection ready");
+    this.logger.info("RabbitMQ connection ready");
     var durable = this.properties['gateway.rabbitmq.durable'] == 'true';
     var options = {autoDelete: false, durable: durable, confirm: true};
     this.exchange = this.rabbitmq.exchange('', options);
 
-    // Create keep alive queue to periodically 
-    // this.clientQueue = this.rabbitmq.queue(this.session.clientId, this.exchange.options,
-    //   this.onClientQueueCreation.bind(this));
+    // Create keep alive queue to periodically push messages to keep connection alive
+    this.logger.info('Setting up keepalive');
+    this.rabbitmq.queue('keepalive', this.exchange.options, (function(queue) {
+      this.logger.info('Setting up keepalive interval');
+      setInterval((function() {
+        this.logger.info('keepalive: ping');
+        this.exchange.publish('keepalive', 'beep', {
+          mandatory: true,
+          confirm: true
+        });
+      }).bind(this), 30000);
+      queue.subscribe((function(response, headers, info, receipt) {
+        this.logger.info('keepalive: pong');
+      }).bind(this));
+    }).bind(this));
 
     this.exchange.on('error', this.gatewayWorker.createErrorHandler('RabbitMQ Exchange'));
 

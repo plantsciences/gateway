@@ -11,7 +11,7 @@ variable "env_map" {
             autoscale_min_capacity   = 1
             autoscale_max_capacity   = 3
             app_port                 = 8080
-            worker_count             = 2
+            worker_count             = 1
 
             log_level                = "info"
             rabbit_host              = ""
@@ -35,7 +35,7 @@ variable "env_map" {
             autoscale_min_capacity   = 1
             autoscale_max_capacity   = 3
             app_port                 = 8080
-            worker_count             = 2
+            worker_count             = 1
 
             log_level                = "info"
             rabbit_host              = "ip-10-0-1-43.us-west-2.compute.internal"
