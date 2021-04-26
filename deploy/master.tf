@@ -17,11 +17,18 @@ resource "aws_security_group" "lb" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # port 80 must also be allowed even thought we redirect to 443
+  # port 80 must also be allowed even though we redirect to 443
   ingress {
     protocol    = "tcp"
     from_port   = 80
     to_port     = 80
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    protocol    = "tcp"
+    from_port   = 8080
+    to_port     = 8080
     cidr_blocks = ["0.0.0.0/0"]
   }
 
@@ -108,6 +115,17 @@ resource "aws_alb_listener" "front_end" {
       protocol    = "HTTPS"
       status_code = "HTTP_301"
     }
+  }
+}
+
+resource "aws_alb_listener" "insecure" {
+  load_balancer_arn = aws_alb.main.id
+  port              = 8080
+  protocol          = "HTTP"
+
+  default_action {
+    target_group_arn = aws_alb_target_group.app.id
+    type             = "forward"
   }
 }
 

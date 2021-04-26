@@ -14,6 +14,7 @@ cluster.workerCount=$WORKER_COUNT
 frontend.logLevel=info
 frontend.shutdownCode=pass123
 frontend.port=$APP_PORT
+frontend.flash_policy_port=$FLASH_POLICY_PORT
 frontend.ssl=false
 frontend.private_key=
 frontend.certificate=

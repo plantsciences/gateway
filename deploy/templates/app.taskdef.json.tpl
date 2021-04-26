@@ -17,6 +17,10 @@
       {
         "containerPort": ${app_port},
         "hostPort": ${app_port}
+      },
+      {
+        "containerPort": ${flash_policy_port},
+        "hostPort": ${flash_policy_port}
       }
     ],
     "secrets": [
@@ -37,6 +41,10 @@
       {
         "name": "APP_PORT",
         "value": "${app_port}"  
+      },
+      {
+        "name": "FLASH_POLICY_PORT",
+        "value": "${flash_policy_port}"  
       },
       { 
         "name": "LOG_LEVEL",

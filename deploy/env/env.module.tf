@@ -11,6 +11,7 @@ variable "env_map" {
             autoscale_min_capacity   = 1
             autoscale_max_capacity   = 3
             app_port                 = 8080
+            flash_policy_port        = 10443
             worker_count             = 1
 
             log_level                = "info"
@@ -35,6 +36,7 @@ variable "env_map" {
             autoscale_min_capacity   = 1
             autoscale_max_capacity   = 3
             app_port                 = 8080
+            flash_policy_port        = 10443
             worker_count             = 1
 
             log_level                = "info"
@@ -96,6 +98,10 @@ output vpc_id {
 
 output app_port {
   value = local.env["app_port"]
+}
+
+output flash_policy_port {
+  value = local.env["flash_policy_port"]
 } 
 
 output worker_count {

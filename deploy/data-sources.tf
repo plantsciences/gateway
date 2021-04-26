@@ -8,6 +8,7 @@ data "template_file" "as-gateway_app" {
     workspace_env  = module.env.name
     app_image      = var.app_image
     app_port       = module.env.app_port
+    flash_policy_port = module.env.flash_policy_port
     fargate_cpu    = module.env.fargate_cpu
     fargate_memory = module.env.fargate_memory
     aws_region     = module.env.aws_region

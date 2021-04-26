@@ -15,7 +15,6 @@ function GatewayServerApplication(){}
 
 GatewayServerApplication.prototype.run = function(configFile){
     var appContext = new AppContext();
-    console.log('GatewayServerApplication boot');
     var server = new GatewayServer();
 
     appContext.register([

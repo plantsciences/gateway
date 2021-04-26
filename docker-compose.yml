@@ -19,11 +19,13 @@ services:
     - WORKER_COUNT=1
     - RUN_MODE=DEV
     - RABBIT_USE_SSL=false
+    - FLASH_POLICY_PORT=10443
     depends_on:
     - rabbit
     - redis
     ports:
-    - "8080:8080"
+    - 8080:8080
+    - 10443:10443
     container_name: as-gateway
     volumes:
     - "./src:/opt/src:cached"
