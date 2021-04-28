@@ -5,19 +5,19 @@
 data "template_file" "as-gateway_app" {
   template = file("./templates/app.taskdef.json.tpl")
   vars = {
-    workspace_env  = module.env.name
-    app_image      = var.app_image
-    app_port       = module.env.app_port
+    workspace_env     = module.env.name
+    app_image         = var.app_image
+    app_port          = module.env.app_port
     flash_policy_port = module.env.flash_policy_port
-    fargate_cpu    = module.env.fargate_cpu
-    fargate_memory = module.env.fargate_memory
-    aws_region     = module.env.aws_region
-    log_level      = module.env.log_level
-    rabbit_host    = regex("amqps://(.*):.*", data.aws_mq_broker.main.instances.0.endpoints.0)[0]
-    rabbit_port    = regex("amqps://.*:(.*)", data.aws_mq_broker.main.instances.0.endpoints.0)[0]
-    redis_host     = module.env.redis_host
-    aws_account_id = var.aws_account_id
-    worker_count   = module.env.worker_count
+    fargate_cpu       = module.env.fargate_cpu
+    fargate_memory    = module.env.fargate_memory
+    aws_region        = module.env.aws_region
+    log_level         = module.env.log_level
+    rabbit_host       = regex("amqps://(.*):.*", data.aws_mq_broker.main.instances.0.endpoints.0)[0]
+    rabbit_port       = regex("amqps://.*:(.*)", data.aws_mq_broker.main.instances.0.endpoints.0)[0]
+    redis_host        = module.env.redis_host
+    aws_account_id    = var.aws_account_id
+    worker_count      = module.env.worker_count
   }
 }
 
