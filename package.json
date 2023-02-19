@@ -8,7 +8,7 @@
     "injecterooski": "*",
     "node-properties-parser": "^0.0.2",
     "redis": "^0.12.1",
-    "socket.io": "git+https://github.com/plantsciences/socket.io.git",
+    "socket.io": "git+https://github.com/socketio/socket.io.git#0.9.x",
     "socket.io-client": "^0.9.9",
     "winston": "^0.6.2",
     "lodash": "~1.3.1"
