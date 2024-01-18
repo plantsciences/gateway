@@ -36,7 +36,7 @@ gateway.rabbitmq.port=$RABBIT_PORT
 gateway.rabbitmq.login=$RABBIT_USER
 gateway.rabbitmq.password=$RABBIT_PASS
 gateway.rabbitmq.useSSL=$RABBIT_USE_SSL
-gateway.rabbitmq.durable=true
+gateway.rabbitmq.durable=$RABBIT_DURABLE
 gateway.rabbitmq.concurrency=5
 
 EOF
