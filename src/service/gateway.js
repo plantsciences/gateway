@@ -101,6 +101,10 @@ Gateway.prototype.onRabbitReady = function () {
     }).bind(this));
 
     this.exchange.on('error', this.gatewayWorker.createErrorHandler('RabbitMQ Exchange'));
+    
+    this.exchange.on('return', (function (msg) {
+        this.logger.warn('RabbitMQ message returned: ' + msg);
+    }).bind(this));
 
     // Handles a new client socket connection.
     this.sio.sockets.on('connection',this.onSocketConnection.bind(this));
