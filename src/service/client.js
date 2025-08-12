@@ -35,6 +35,8 @@ function GatewayClient(socket, exchange, rabbitmq, logger, properties, sessionFa
     this.awaitingResponseAcksInterval = {}; // Message ACK Intervals for client message re-sends.
     this.clientQueue = null;    // Client RabbitMQ Queue
     this.disposed = false;
+    
+    this._eventsRegistered = false;  // Avoid double-registering socket event handlers on reconnect
 
     this.init();
 }
@@ -76,14 +78,19 @@ GatewayClient.prototype.dispose = function() {
 
     // Close down the Client Queue
     if (this.clientQueue) {
-        if (this.clientQueue.state == 'open') {
-            try {
-                this.clientQueue.close();
-            } catch (error) {
-                this.logger.verbose('Unable to close clientQueue ' + this.clientQueue);
-            }
+        try {
+            if (this._consumerTag) this.clientQueue.unsubscribe(this._consumerTag);
+        } catch (e) { 
+            this.logger.warn('Unable to unsubscribe from clientQueue: ' + this.clientQueue);
+         }
+        try {
+            if (this.clientQueue.state == 'open') this.clientQueue.close();
+        } catch (error) {
+            this.logger.warn('Unable to close clientQueue ' + this.clientQueue);
         }
+
         this.clientQueue = undefined;
+        this._consumerTag = undefined;  // Clear consumer tag
     }
 
     // NOTE: The socket will be closed down outside of this class.
@@ -167,13 +174,19 @@ GatewayClient.prototype.onConnect = function() {
         return;
     }
 
-    this.registerEvents();
+    if(!this._eventsRegistered) {
+        // Register the events only once, to avoid double-registering on reconnects.
+        this._eventsRegistered = true;
+        this.registerEvents();
+    } else {
+        this.logger.warn('CONNECT: Client is already registered for events.');
+    }
     this.registerResponseQueue();
 };
 
 GatewayClient.prototype.onDisconnect = function(message) {
     if (!this.clientQueue) {
-        this.logger.warn('Client is not connected.');
+        this.logger.warn('DISCONNECT: Client is not connected.');
     }
     this.dispose();
 };
@@ -186,38 +199,48 @@ GatewayClient.prototype.onReconnect = function(message) {
         this.dispose();
     }
 
-    // The reconnectId is an encoded string that should contain all required details to re-establish the
-    //  session, including the previous ClientID, which we save and then swap out for the new/current ClientID
-    var newClientId = this.session.clientId;
-    this.session.load(message.reconnectId); // Decrypts the reconnectId
-    if (!this.session.existingClientIds) {
-        this.session.existingClientIds = [];
+    // // The reconnectId is an encoded string that should contain all required details to re-establish the
+    // //  session, including the previous ClientID, which we save and then swap out for the new/current ClientID
+    // var newClientId = this.session.clientId;
+    // this.session.load(message.reconnectId); // Decrypts the reconnectId
+    // if (!this.session.existingClientIds) {
+    //     this.session.existingClientIds = [];
+    // }
+    // 
+    // // Setup the existing/previous client id(s)
+    // var oldClientId = this.session.clientId;
+    // if (!oldClientId) {
+    //     logger.error("No previous ClientID on reconnect");
+    // }
+    // else {
+    //     this.session.existingClientId = oldClientId;
+    //     this.session.existingClientIds.push(oldClientId);
+    // }
+    // this.session.clientId = newClientId;
+    // this.onConnect(message);
+    // 
+    // if (this.session.isLoggedIn() && this.session.existingClientId && this.session.existingClientId !== this.session.clientId) {
+    //     var reconnectMessage = this.session.populateMessage({
+    //         cn: 'com.percero.agents.sync.vo.ReconnectRequest',
+    //         existingClientId: this.session.existingClientId,
+    //         existingClientIds: this.session.existingClientIds
+    //     });
+    //     this.logger.verbose('Reconnect Message for session client ' + this.session.clientId
+    //         + ': ' + JSON.stringify(reconnectMessage));
+    //     this.sendToAgent('reconnect', reconnectMessage);
+    // 
+    // }
+
+    // Restore the saved session (must contain the prior/stable clientId)
+    var ok = this.session.load(message.reconnectId);
+    if (!ok || !this.session.mailboxId) {
+    this.logger.error('ReconnectId invalid or missing mailboxId; treating as fresh connect');
+        return this.onConnect(message);
     }
 
-    // Setup the existing/previous client id(s)
-    var oldClientId = this.session.clientId;
-    if (!oldClientId) {
-        logger.error("No previous ClientID on reconnect");
-    }
-    else {
-        this.session.existingClientId = oldClientId;
-        this.session.existingClientIds.push(oldClientId);
-    }
-    this.session.clientId = newClientId;
+    // connectionId/clientId already rotated in session.load()
+    // No legacy rename needed when mailboxId is unchanged
     this.onConnect(message);
-
-    if (this.session.isLoggedIn() && this.session.existingClientId && this.session.existingClientId !== this.session.clientId) {
-        var reconnectMessage = this.session.populateMessage({
-            cn: 'com.percero.agents.sync.vo.ReconnectRequest',
-            existingClientId: this.session.existingClientId,
-            existingClientIds: this.session.existingClientIds
-        });
-        this.logger.verbose('Reconnect Message for session client ' + this.session.clientId
-            + ': ' + JSON.stringify(reconnectMessage));
-        this.sendToAgent('reconnect', reconnectMessage);
-
-    }
-
 };
 
 ///////////////////////////////////
@@ -403,7 +426,7 @@ GatewayClient.prototype.onClientQueueMessage = function(response, headers, info,
         else {
             // This client is no longer valid. This typically happens when a client reconnects
             //  from a different network/IP address/router.
-            this.logger.verbose('Received EOL for queue ' + this.session.clientId);
+            this.logger.verbose('Received EOL for queue mailboxId=' + this.session.mailboxId + ' clientId=' + this.session.clientId);
             this.isServerTerminated = true;
             this.dispose();
             this.emit('dispose', true);
@@ -475,8 +498,10 @@ GatewayClient.prototype.resend = function(theResponse) {
 GatewayClient.prototype.onClientQueueCreation = function(queue) {
     var options = { ack: true, prefetchCount: 10 };
 
-    // Setup subscription to the new queue.
-    queue.subscribe(options, this.onClientQueueMessage.bind(this));
+    // Setup subscription to the new queue. 
+    queue.subscribe(options, this.onClientQueueMessage.bind(this))
+       .addCallback(function(ok) { this._consumerTag = ok.consumerTag; }.bind(this));  // Save the consumerTag for later use.
+
 
     queue.on('close', this.onClientQueueClose.bind(this));
     queue.on('delete', this.onClientQueueDeleted.bind(this));
@@ -488,7 +513,7 @@ GatewayClient.prototype.onClientQueueCreation = function(queue) {
  */
 GatewayClient.prototype.onClientQueueClose = function(){
     // This client is no longer valid because the RabbitQueue has closed.
-    this.logger.verbose('Rabbit Queue Closed: ' + this.session.clientId);
+    this.logger.verbose('Rabbit Queue Closed. mailboxId=' + this.session.mailboxId + ' clientId=' + this.session.clientId);
     this.dispose();
     this.emit('dispose');
 };
@@ -498,7 +523,7 @@ GatewayClient.prototype.onClientQueueClose = function(){
  */
 GatewayClient.prototype.onClientQueueDeleted = function(){
     // This client is no longer valid because the RabbitQueue has been deleted.
-    this.logger.verbose('Rabbit Queue Deleted: ' + this.session.clientId);
+    this.logger.verbose('Rabbit Queue Deleted. mailboxId=' + this.session.mailboxId + ' clientId=' + this.session.clientId);
     this.dispose();
     this.emit('dispose');
 };
@@ -508,9 +533,43 @@ GatewayClient.prototype.onClientQueueDeleted = function(){
  *  name for the queue. Once the queue is setup, subscribes to the queue. This queue is for messages from the
  *  ActiveStack back-end that are intended for the client.
  */
-GatewayClient.prototype.registerResponseQueue = function() {
-    this.logger.verbose('Setting up rabbit queue ' + this.session.clientId);
-    this.clientQueue = this.rabbitmq.queue(this.session.clientId, this.exchange.options,
+GatewayClient.prototype.registerResponseQueue = function () {
+    const qname = this.session.mailboxId;  // <-- stable
+    this.logger.verbose('Setting up rabbit queue ' + qname + ' for client ' + this.session.clientId);
+    const durable = (this.exchange.options && typeof this.exchange.options.durable === 'boolean') ? this.exchange.options.durable : true;
+    const autoDelete = (this.exchange.options && typeof this.exchange.options.autoDelete === 'boolean') ? this.exchange.options.autoDelete : false;
+    var options = {
+        durable: durable,
+        autoDelete: autoDelete,  // Keep the queue when the consumer disconnects so an idle client can return and catch up.  (Use true only for short-lived reply queues.)
+        // exclusive: false,   // Allows reconnects from a new TCP connection/process.  If true, the queue is tied to the first connection and will error on redeclare after a crash.
+        arguments: {
+            //'x-queue-mode': 'lazy',
+            // RabbitMQ stores messages on disk early, minimizing RAM usage for long-idle backlogs.
+            // Great for “mailbox” queues that may hold thousands of messages while a client is offline.
+
+            'x-single-active-consumer': true,
+            // If multiple consumers (e.g., two tabs/devices) attach to the same queue,
+            // RabbitMQ delivers to only one at a time, preventing duplicates/out-of-order surprises.
+
+            'x-expires': this.properties['gateway.rabbitmq.expires'] || 604800000,  // default 7 days
+            // Deletes the entire queue after it’s been unused for this period (no consumers, no get, not redeclared).
+            // This is your “cleanup abandoned mailboxes after N days” safety net.
+
+            // 'x-message-ttl': 604800000, 
+            // Per-message expiry. Use it to cap backlog age if you’re okay with partial catch-up. 
+            // If you want “all-or-nothing,” omit this or set it greater than x-expires.
+
+            // 'x-max-length' / 'x-max-length-bytes': <value>, 
+            // Hard caps to prevent unbounded growth. Overflowing messages can go to a DLX.
+
+            // 'x-dead-letter-exchange': <exchange>, 
+            // Route expired/overflowed/unacked-too-long messages to an exchange you monitor, 
+            // so drops aren’t silent.
+        }
+    }
+    this.clientQueue = this.rabbitmq.queue(
+        qname,
+        options,
         this.onClientQueueCreation.bind(this));
 };
 
@@ -582,7 +641,7 @@ GatewayClient.prototype.onSocketEvent = function(eventName, request){
             }
         }
         else {
-            this.logger.error('Error sending message to agent: ' + error);
+            this.logger.error('Error sending message to agent (publish failed/closed exchange).');
         }
     }
     else {
@@ -613,22 +672,23 @@ GatewayClient.prototype.sendToAgent = function(name, message, callback) {
         this.emit('dispose');
         return false;
     }
-    else {
-        if (message.clientId && message.clientId !== this.session.clientId) {
-            // The message's clientId does not match the session's clientId.  This typically happens after a device has reconnected
-            //  and the client library does not update to it's new clientId.
-            this.logger.verbose('Message client ' + message.clientId + ' is different than Session client ' + this.session.clientId);
-            message.clientId = this.session.clientId;
-        }
 
-        // Publish the message to the queue.
-        this.exchange.publish(name, message, {
-            replyTo: this.session.clientId,
-            mandatory: true,
-            confirm: true
-        }, callback);
-        return true;
+    // Keep message.clientId aligned with the current (rotating) connectionId
+    if (message.clientId && message.clientId !== this.session.clientId) {
+        // The message's clientId does not match the session's clientId.  This typically happens after a device has reconnected
+        //  and the client library does not update to it's new clientId.
+        this.logger.verbose('Message client ' + message.clientId + ' is different than Session client ' + this.session.clientId);
+        message.clientId = this.session.clientId;  // connectionId
     }
+
+    // Publish the message to the queue.
+    this.exchange.publish(name, message, {
+        replyTo: this.session.mailboxId,  // <-- stable mailboxId
+        mandatory: true,
+        confirm: true
+    }, callback);
+    return true;
+
 };
 
 /**

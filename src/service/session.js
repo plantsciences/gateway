@@ -1,7 +1,7 @@
 'use strict';
 
 // TODO: Implement rolling session secret.
-var MAX_SESSION_AGE = (new Date(0)).setUTCDate(7);  // 7 days
+const MAX_SESSION_AGE_MS = 7 * 24 * 60 * 60 * 1000;  // 7 days in ms (was off by a day before)
 
 var crypto = require('crypto');
 
@@ -12,19 +12,25 @@ module.exports = Session;
  * storage offload to client.
  *
  * @param logger Winston instance.
+ * @param properties Properties object containing configuration.
  */
 function Session(logger, properties) {
     this.logger = logger;
     this.properties = properties;
 
+    const firstId = crypto.randomBytes(16).toString('hex');
+
     this._contents = {
-        clientId: crypto.randomBytes(16).toString('hex'),
+        clientId: firstId,  // kept for backward-compat; mirrors connectionId
         existingClientId: undefined,
         existingClientIds: undefined,
         deviceId: undefined,
         token: undefined,
-        userId: undefined
+        userId: undefined,
+        mailboxId: 'M_' + firstId,      // stable
+        connectionId: firstId           // rotating
     };
+
     this._dirty = true;
 }
 
@@ -34,7 +40,9 @@ Session.content_keys = [
     'existingClientIds',
     'deviceId',
     'token',
-    'userId'
+    'userId',
+    'mailboxId',
+    'connectionId'
 ];
 
 // Creates a getter/setter pair for each piece of session data.
@@ -73,7 +81,7 @@ Session.prototype.getSignedSession = function() {
     this._dirty = false;
     var jsonCopy = JSON.stringify(this.clone({ savedAt: Date.now() }));
 
-    var encodedSession = new Buffer(jsonCopy).toString('base64');
+    var encodedSession = Buffer.from(jsonCopy).toString('base64');
     return (encodedSession + ';' + this.signSession(encodedSession));
 };
 
@@ -98,15 +106,14 @@ Session.prototype.isDirtyAsync = function(callback){
  * @returns {Boolean} True if valid and false if invalid.
  */
 Session.prototype.load = function(signedSession) {
-    if (signedSession && (typeof signedSession.split == 'function')) {
-        var parts = signedSession.split(';');
-    } else {
-        this.logger.warn('Dropping invalid session: ' + signedSession);
+    if (!signedSession || typeof signedSession.split !== 'function') {
+        this.logger.warn('Dropping invalid session (typeof signedSession.split !== function): ' + signedSession);
         return false;
     }
+    const parts = signedSession.split(';');
 
     if (parts.length != 2) {
-        this.logger.warn('Dropping invalid session: ' + signedSession);
+        this.logger.warn('Dropping invalid session (parts.length != 2): ' + signedSession);
         return false;
     }
 
@@ -118,19 +125,41 @@ Session.prototype.load = function(signedSession) {
         return false;
     }
 
-    var copy = JSON.parse(new Buffer(encodedSession, 'base64').toString());
-    if (copy.savedAt < Date.now() - MAX_SESSION_AGE) {
+    let copy;
+    try {
+        copy = JSON.parse(Buffer.from(encodedSession, 'base64').toString());
+    } catch (e) {
+        this.logger.warn('Dropping unparseable session: ' + signedSession);
+        return false;
+    }
+
+    if (copy.savedAt < Date.now() - MAX_SESSION_AGE_MS) {
         this.logger.warn('Dropping expired session: ' + signedSession);
         return false;
     }
     delete copy.savedAt;
 
-    Object.keys(this._contents).forEach(function(key) {
-        this[key] = copy[key];
-        delete copy[key];
-    }.bind(this));
+    // Merge only defined keys to avoid clobbering with undefined (backward compat)
+    Session.content_keys.forEach(function (key) {
+        if (Object.prototype.hasOwnProperty.call(copy, key) && typeof copy[key] !== 'undefined') {
+            this[key] = copy[key];
+            delete copy[key];
+        }
+    }, this);
 
-    // Dirty ourselves so the client gets an update with a newer timestamp.
+    // --- Migration & invariants ---
+
+    // Ensure we always have a stable mailboxId (for legacy tokens)
+    if (!this.mailboxId) {
+        const seed = this.clientId || this.connectionId || _randId();
+        this.mailboxId = 'M_' + seed;
+    }
+
+    // Rotate the per-connection id on every load (reconnect),
+    // and keep clientId mirroring it for legacy code paths.
+    this.rotateConnection();
+
+    // Mark dirty so the client gets a refreshed token (new savedAt)
     this._dirty = true;
 
     var leftovers = Object.keys(copy);
@@ -172,4 +201,16 @@ Session.prototype.logout = function() {
  */
 Session.prototype.isLoggedIn = function() {
     return !!this.userId;
+};
+
+/**
+ * Rotate only the per-connection identity (keep mailboxId stable).
+ * Mirrors clientId to connectionId for backward compatibility.
+ */
+Session.prototype.rotateConnection = function () {
+  const next = crypto.randomBytes(16).toString('hex');
+  this.connectionId = next;
+  this.clientId = next;
+  this._dirty = true;
+  return next;
 };
