@@ -383,13 +383,11 @@ GatewayClient.prototype.afterLogin = function(){
  */
 GatewayClient.prototype.onClientQueueMessage = function(response, headers, info, receipt) {
     if (!response) {
-        this.logger.error("NULL response in client.onClientQueueMessage:");
-        this.logger.error("headers: ");
-        this.logger.error(sys.inspect(headers));
-        this.logger.error("info: ");
-        this.logger.error(sys.inspect(info));
-        this.logger.error("receipt: ");
-        this.logger.error(sys.inspect(receipt));
+        this.logger.error("NULL response in client.onClientQueueMessage:", {
+            headers: sys.inspect(headers),
+            info: sys.inspect(info),
+            receipt: sys.inspect(receipt)
+        });
         return;
     }
 
