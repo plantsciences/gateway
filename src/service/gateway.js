@@ -89,14 +89,14 @@ Gateway.prototype.onRabbitReady = function () {
     this.rabbitmq.queue('keepalive', this.exchange.options, (function(queue) {
       this.logger.info('Setting up keepalive interval');
       setInterval((function() {
-        this.logger.info('keepalive: ping');
+        this.logger.debug('keepalive: ping');
         this.exchange.publish('keepalive', 'beep', {
           mandatory: true,
           confirm: true
         });
       }).bind(this), 30000);
       queue.subscribe((function(response, headers, info, receipt) {
-        this.logger.info('keepalive: pong');
+        this.logger.debug('keepalive: pong');
       }).bind(this));
     }).bind(this));
 
