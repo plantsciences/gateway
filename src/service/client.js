@@ -186,7 +186,9 @@ GatewayClient.prototype.onConnect = function() {
 
 GatewayClient.prototype.onDisconnect = function(message) {
     if (!this.clientQueue) {
-        this.logger.warn('DISCONNECT: Client is not connected.');
+        this.logger.warn('DISCONNECT: Client is not connected.', { reason: message });
+    } else {
+        this.logger.warn('DISCONNECT: Client requested disconnect.', { reason: message });
     }
     this.dispose();
 };
@@ -513,7 +515,7 @@ GatewayClient.prototype.onClientQueueCreation = function(queue) {
  */
 GatewayClient.prototype.onClientQueueClose = function(){
     // This client is no longer valid because the RabbitQueue has closed.
-    this.logger.verbose('Rabbit Queue Closed. mailboxId=' + this.session.mailboxId + ' clientId=' + this.session.clientId);
+    this.logger.warn('Rabbit Queue Closed. mailboxId=' + this.session.mailboxId + ' clientId=' + this.session.clientId);
     this.dispose();
     this.emit('dispose');
 };
@@ -523,7 +525,7 @@ GatewayClient.prototype.onClientQueueClose = function(){
  */
 GatewayClient.prototype.onClientQueueDeleted = function(){
     // This client is no longer valid because the RabbitQueue has been deleted.
-    this.logger.verbose('Rabbit Queue Deleted. mailboxId=' + this.session.mailboxId + ' clientId=' + this.session.clientId);
+    this.logger.warn('Rabbit Queue Deleted. mailboxId=' + this.session.mailboxId + ' clientId=' + this.session.clientId);
     this.dispose();
     this.emit('dispose');
 };
@@ -702,6 +704,7 @@ GatewayClient.prototype.sendToClient = function(name, message) {
 GatewayClient.prototype.createErrorHandler = function(source) {
     return function(error) {
         this.logger.error('Fatal ' + source + ' error: ', error.stack);
+        this.logger.error('Disconnecting client due to fatal error: ' + source);
 
         this.socket.disconnect();
         try {
