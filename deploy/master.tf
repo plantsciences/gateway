@@ -77,6 +77,9 @@ resource "aws_alb" "main" {
   name            = "${module.env.name}-as-gateway-load-balancer"
   subnets         = data.aws_subnet_ids.public.ids
   security_groups = [aws_security_group.lb.id]
+  # Must stay above gateway.socketio.timeout (see docker/config/env.properties.tpl.sh)
+  # so the ALB never kills a WebSocket connection the app still considers alive.
+  idle_timeout = 350
 }
 
 resource "aws_alb_target_group" "app" {
